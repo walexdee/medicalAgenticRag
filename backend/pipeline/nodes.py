@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 _openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def get_llm_response(prompt: str) -> str:
+def get_llm_response(prompt: str, temperature: float = 0.5) -> str:
     try:
         response = _openai_client.chat.completions.create(
             model=LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
+            temperature=temperature,
             max_tokens=500,
         )
         return response.choices[0].message.content.strip()
@@ -34,13 +34,13 @@ def router_node(state: GraphState) -> GraphState:
 Query: "{state['query']}"
 
 Route to ONE option:
-- Retrieve_QnA: Medical conditions, symptoms, treatments, diseases
-- Retrieve_Device: Medical devices, device manuals, usage, specifications
-- Web_Search: Current news, recent events, prices, external data
+- Retrieve_QnA: Medical conditions, symptoms, treatments, diagnoses, drugs, diseases (e.g. diabetes, hypertension, medications)
+- Retrieve_Device: Medical equipment or devices — anything involving a named device, machine, monitor, scanner, pump, implant, or its indications, contraindications, calibration, or operation (e.g. pacemaker, MRI, ventilator, insulin pump)
+- Web_Search: Current news, recent events, prices, or data not covered above
 
 Respond ONLY with: Retrieve_QnA, Retrieve_Device, or Web_Search"""
 
-    decision = get_llm_response(prompt).strip()
+    decision = get_llm_response(prompt, temperature=0).strip()
     valid = {"Retrieve_QnA", "Retrieve_Device", "Web_Search"}
     state["source"] = decision if decision in valid else "Web_Search"
     state["source_routing"] = state["source"]
@@ -103,7 +103,7 @@ Query: {state['query']}
 Answer ONLY with the single word: Yes or No"""
 
     try:
-        decision = get_llm_response(prompt).strip()
+        decision = get_llm_response(prompt, temperature=0).strip()
         is_relevant = decision.lower().startswith("y")
         state["is_relevant"] = "Yes" if is_relevant else "No"
         state["relevance_reason"] = f"Context relevance: {state['is_relevant']}"

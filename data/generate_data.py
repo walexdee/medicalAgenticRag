@@ -251,9 +251,9 @@ DRUGS_STANDALONE = [
 
 def make_qna_rows(n=1000):
     rows = []
-    idx = 0
-    while len(rows) < n:
-        cond = CONDITIONS[idx % len(CONDITIONS)]
+
+    # Generate all condition × template combinations (17 × 17 = 289 unique Q/A pairs)
+    for cond in CONDITIONS:
         (condition, description, system, complication,
          type1, type2, criterion,
          symptom1, symptom2, symptom3, severe_symptom, crisis,
@@ -263,39 +263,46 @@ def make_qna_rows(n=1000):
          complication1, complication2, complication3,
          drug, marker, route, monitoring) = cond
 
-        template = QNA_TEMPLATES[idx % len(QNA_TEMPLATES)]
-        q_tmpl, a_tmpl, qtype = template
+        for q_tmpl, a_tmpl, qtype in QNA_TEMPLATES:
+            q = q_tmpl.format(
+                condition=condition, drug=drug, description=description,
+                system=system, complication=complication,
+            )
+            a = a_tmpl.format(
+                condition=condition, description=description, system=system,
+                complication=complication, type1=type1, type2=type2, criterion=criterion,
+                symptom1=symptom1, symptom2=symptom2, symptom3=symptom3,
+                severe_symptom=severe_symptom, trigger=trigger,
+                treatment=treatment, advanced_treatment=advanced_treatment, lifestyle=lifestyle,
+                test1=test1, test2=test2, test3=test3, threshold=threshold,
+                prevention1=prevention1, prevention2=prevention2, risk_factor=risk_factor,
+                complication1=complication1, complication2=complication2, complication3=complication3,
+                drug=drug, drug1=drug, drug2=monitoring, drug3=advanced_treatment,
+                marker=marker, route=route, mechanism=f"inhibiting {system} pathways",
+                effect=f"reducing {symptom1}", side_effect1=symptom1, side_effect2=symptom2,
+                serious_side_effect=complication1,
+            )
+            rows.append({"Question": q, "Answer": a, "qtype": qtype})
 
-        q = q_tmpl.format(
-            condition=condition, drug=drug, description=description,
-            system=system, complication=complication,
-        )
-        a = a_tmpl.format(
-            condition=condition, description=description, system=system,
-            complication=complication, type1=type1, type2=type2, criterion=criterion,
-            symptom1=symptom1, symptom2=symptom2, symptom3=symptom3,
-            severe_symptom=severe_symptom, trigger=trigger,
-            treatment=treatment, advanced_treatment=advanced_treatment, lifestyle=lifestyle,
-            test1=test1, test2=test2, test3=test3, threshold=threshold,
-            prevention1=prevention1, prevention2=prevention2, risk_factor=risk_factor,
-            complication1=complication1, complication2=complication2, complication3=complication3,
-            drug=drug, drug1=drug, drug2=monitoring, drug3=advanced_treatment,
-            marker=marker, route=route, mechanism=f"inhibiting {system} pathways",
-            effect=f"reducing {symptom1}", side_effect1=symptom1, side_effect2=symptom2,
-            serious_side_effect=complication1,
-        )
-        rows.append({"Question": q, "Answer": a, "qtype": qtype})
-        idx += 1
+    # Drug-specific rows (5 drugs × 3 templates = 15 more unique entries)
+    for drug, cond_name, mech, effect, route, marker, se1, se2, serious in DRUGS_STANDALONE:
+        rows.append({"Question": f"What is {drug} used for?",
+                     "Answer": f"{drug} is used to treat {cond_name} by {mech}. "
+                               f"It is typically administered {route} and dosage is adjusted based on {marker}.",
+                     "qtype": "Medication"})
+        rows.append({"Question": f"What are the side effects of {drug}?",
+                     "Answer": f"Common side effects of {drug} include {se1} and {se2}. "
+                               f"Serious but rare side effects include {serious}.",
+                     "qtype": "Medication"})
+        rows.append({"Question": f"How does {drug} work?",
+                     "Answer": f"{drug} works by {mech}. This results in {effect}, "
+                               f"which helps manage {cond_name}.",
+                     "qtype": "Medication"})
 
-    # Also sprinkle drug-specific rows
-    for i, (drug, cond_name, mech, effect, route, marker, se1, se2, serious) in enumerate(DRUGS_STANDALONE * 40):
-        if len(rows) >= n:
-            break
-        q = f"What is {drug} used for?"
-        a = (f"{drug} is used to treat {cond_name} by {mech}. "
-             f"It is typically administered {route} and dosage is adjusted based on {marker}.")
-        rows.append({"Question": q, "Answer": a, "qtype": "Medication"})
-
+    # Shuffle and pad/trim to n
+    random.shuffle(rows)
+    while len(rows) < n:
+        rows.extend(rows[:n - len(rows)])
     return rows[:n]
 
 

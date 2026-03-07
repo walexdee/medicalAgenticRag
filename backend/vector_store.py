@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -163,15 +164,17 @@ def ingest_data(
 
     if os.path.exists(qa_csv):
         df_qa = pd.read_csv(qa_csv)
+        df_qa = df_qa.drop_duplicates(subset=["Question"]).reset_index(drop=True)
         df_qa = df_qa.sample(min(sample_size, len(df_qa)), random_state=42)
         df_qa["combined_text"] = (
             "Q: " + df_qa["Question"].astype(str) + " | "
             "A: " + df_qa["Answer"].astype(str) + " | "
             "Type: " + df_qa.get("qtype", "General").astype(str)
         )
+        ids = [hashlib.md5(q.encode()).hexdigest() for q in df_qa["Question"]]
         _upsert(
             "medical_qna",
-            ids=df_qa.index.astype(str).tolist(),
+            ids=ids,
             docs=df_qa["combined_text"].tolist(),
             metas=df_qa.to_dict(orient="records"),
         )
@@ -180,15 +183,19 @@ def ingest_data(
 
     if os.path.exists(device_csv):
         df_dev = pd.read_csv(device_csv)
+        df_dev = df_dev.drop_duplicates(subset=["Device_Name", "Model_Number"]).reset_index(drop=True)
         df_dev = df_dev.sample(min(sample_size, len(df_dev)), random_state=42)
         df_dev["combined_text"] = (
             "Device: " + df_dev.get("Device_Name", "Unknown").astype(str) + " | "
             "Model: " + df_dev.get("Model_Number", "N/A").astype(str) + " | "
-            "Indications: " + df_dev.get("Indications_for_Use", "N/A").astype(str)
+            "Indications: " + df_dev.get("Indications_for_Use", "N/A").astype(str) + " | "
+            "Contraindications: " + df_dev.get("Contraindications", "N/A").astype(str)
         )
+        ids = [hashlib.md5(f"{r['Device_Name']}{r['Model_Number']}".encode()).hexdigest()
+               for _, r in df_dev.iterrows()]
         _upsert(
             "medical_device",
-            ids=df_dev.index.astype(str).tolist(),
+            ids=ids,
             docs=df_dev["combined_text"].tolist(),
             metas=df_dev.to_dict(orient="records"),
         )
