@@ -1,0 +1,186 @@
+import { SOURCE_COLORS } from "../constants";
+import TypingIndicator from "./TypingIndicator";
+
+function StreamingCursor() {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: 2,
+        height: "1em",
+        background: "#6366f1",
+        marginLeft: 2,
+        verticalAlign: "text-bottom",
+        animation: "blink 0.8s step-end infinite",
+      }}
+    />
+  );
+}
+
+const BOT_AVATAR = (
+  <div
+    style={{
+      width: 32,
+      height: 32,
+      borderRadius: "50%",
+      background: "linear-gradient(135deg,#0f172a,#1e293b)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 14,
+      flexShrink: 0,
+      border: "1px solid #334155",
+    }}
+  >
+    🏥
+  </div>
+);
+
+export default function MessageBubble({ msg }) {
+  if (msg.role === "user") {
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+        <div
+          style={{
+            maxWidth: "72%",
+            background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+            color: "#fff",
+            borderRadius: "18px 18px 4px 18px",
+            padding: "12px 16px",
+            fontSize: 14,
+            lineHeight: 1.6,
+            boxShadow: "0 4px 12px rgba(99,102,241,0.25)",
+          }}
+        >
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.loading) {
+    return (
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "flex-start" }}>
+        {BOT_AVATAR}
+        <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "18px 18px 18px 4px", overflow: "hidden" }}>
+          <TypingIndicator />
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.error) {
+    return (
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "flex-start" }}>
+        <div
+          style={{
+            width: 32, height: 32, borderRadius: "50%",
+            background: "linear-gradient(135deg,#0f172a,#1e293b)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14, flexShrink: 0, border: "1px solid #334155",
+          }}
+        >
+          ⚠️
+        </div>
+        <div
+          style={{
+            maxWidth: "78%",
+            background: "#7f1d1d",
+            border: "1px solid #dc2626",
+            borderRadius: "4px 18px 18px 18px",
+            padding: "12px 16px",
+            color: "#fca5a5",
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}
+        >
+          {msg.error}
+        </div>
+      </div>
+    );
+  }
+
+  const src = SOURCE_COLORS[msg.source] || SOURCE_COLORS.default;
+  const isRerouted = msg.relevance?.is_relevant === false;
+  const isStreaming = msg.streaming === true;
+
+  const confidencePct = msg.confidence != null ? Math.round(msg.confidence * 100) : null;
+  const confidenceColor =
+    confidencePct == null ? null :
+    confidencePct >= 80 ? "#10b981" :
+    confidencePct >= 55 ? "#f59e0b" : "#ef4444";
+  const confidenceBg =
+    confidencePct == null ? null :
+    confidencePct >= 80 ? "rgba(16,185,129,0.1)" :
+    confidencePct >= 55 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
+
+  return (
+    <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "flex-start" }}>
+      {BOT_AVATAR}
+      <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", gap: 8 }}>
+        {msg.source && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span
+              style={{
+                background: src.bg, border: `1px solid ${src.border}`, color: src.border,
+                borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5,
+              }}
+            >
+              {src.icon} {src.label}
+            </span>
+            {msg.source_info?.reason && (
+              <span
+                style={{
+                  background: "rgba(100,116,139,0.1)", border: "1px solid #334155",
+                  color: "#94a3b8", borderRadius: 20, padding: "3px 10px", fontSize: 11,
+                }}
+              >
+                {msg.source_info.reason}
+              </span>
+            )}
+            {isRerouted && (
+              <span
+                style={{
+                  background: "rgba(245,158,11,0.1)", border: "1px solid #f59e0b",
+                  color: "#f59e0b", borderRadius: 20, padding: "3px 10px", fontSize: 11,
+                }}
+              >
+                Re-routed to web
+              </span>
+            )}
+            {confidencePct != null && !isStreaming && (
+              <span
+                style={{
+                  background: confidenceBg, border: `1px solid ${confidenceColor}`,
+                  color: confidenceColor, borderRadius: 20, padding: "3px 10px",
+                  fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
+                }}
+              >
+                {confidencePct >= 80 ? "✓" : confidencePct >= 55 ? "~" : "!"} {confidencePct}% confidence
+              </span>
+            )}
+          </div>
+        )}
+
+        <div
+          style={{
+            background: "#1e293b", border: "1px solid #334155",
+            borderRadius: "4px 18px 18px 18px", padding: "14px 16px",
+            color: "#e2e8f0", fontSize: 14, lineHeight: 1.7,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)", minHeight: 48,
+          }}
+        >
+          {msg.answer || msg.content || ""}
+          {isStreaming && <StreamingCursor />}
+        </div>
+
+        {msg.timestamp && (
+          <div style={{ fontSize: 11, color: "#64748b", display: "flex", gap: 12, marginTop: 4 }}>
+            <span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
+            {msg.iteration_count > 0 && <span>Iterations: {msg.iteration_count}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
