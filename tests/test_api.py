@@ -1,7 +1,7 @@
 """
 Integration tests for FastAPI routes.
 
-All external I/O (OpenAI, ChromaDB, DuckDuckGo) is mocked.
+All external I/O (OpenAI, pgvector, DuckDuckGo) is mocked.
 The TestClient exercises the full request/response cycle.
 """
 import json
@@ -20,8 +20,8 @@ def _pipeline_result(**overrides) -> dict:
         query="What are symptoms of diabetes?",
         response="Diabetes symptoms include increased thirst.",
         source="Medical Q&A Collection",
-        source_routing="Retrieve_QnA",
-        source_reason="Routed to Retrieve_QnA",
+        routed_to="medical_knowledge",
+        routing_reason="Routed to medical_knowledge",
         is_relevant="Yes",
         relevance_reason="Context is relevant",
         iteration_count=1,
@@ -158,7 +158,7 @@ class TestQueryStreamEndpoint:
         """Build an async generator that yields realistic SSE events."""
         answer = "Diabetes symptoms include thirst."
         events = [
-            f'data: {json.dumps({"type": "meta", "source": "Medical Q&A Collection", "source_info": {"routing": "Retrieve_QnA", "reason": "Routed"}, "relevance": {"is_relevant": True}, "context": "ctx"})}\n\n',
+            f'data: {json.dumps({"type": "meta", "source": "Medical Q&A Collection", "source_info": {"routing": "medical_knowledge", "reason": "Routed"}, "relevance": {"is_relevant": True}, "context": "ctx"})}\n\n',
             f'data: {json.dumps({"type": "token", "token": "Diabetes "})}\n\n',
             f'data: {json.dumps({"type": "token", "token": "symptoms."})}\n\n',
             f'data: {json.dumps({"type": "done", "answer": answer, "confidence": 0.90, "iteration_count": 1, "timestamp": "2024-01-01T00:00:00"})}\n\n',

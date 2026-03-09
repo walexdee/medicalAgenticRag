@@ -16,12 +16,10 @@ import backend.history as hist
 
 @pytest.fixture
 def mock_db(monkeypatch):
-    """Patch backend.db.get_conn and put_conn for the duration of each test."""
-    import backend.db as db_mod
-
+    """Patch get_conn and put_conn as imported in backend.history."""
     mock_conn, mock_cursor = make_mock_conn()
-    monkeypatch.setattr(db_mod, "get_conn", MagicMock(return_value=mock_conn))
-    monkeypatch.setattr(db_mod, "put_conn", MagicMock())
+    monkeypatch.setattr(hist, "get_conn", MagicMock(return_value=mock_conn))
+    monkeypatch.setattr(hist, "put_conn", MagicMock())
     return mock_conn, mock_cursor
 
 
@@ -81,10 +79,9 @@ class TestGetHistory:
 
 class TestSaveTurn:
     def test_none_conversation_id_is_noop(self, monkeypatch):
-        import backend.db as db_mod
         mock_get = MagicMock()
-        monkeypatch.setattr(db_mod, "get_conn", mock_get)
-        monkeypatch.setattr(db_mod, "put_conn", MagicMock())
+        monkeypatch.setattr(hist, "get_conn", mock_get)
+        monkeypatch.setattr(hist, "put_conn", MagicMock())
 
         hist.save_turn(None, "question", "answer")
         mock_get.assert_not_called()
@@ -118,10 +115,9 @@ class TestSaveTurn:
         mock_conn.rollback.assert_called_once()
 
     def test_connection_always_released(self, mock_db, monkeypatch):
-        import backend.db as db_mod
         mock_conn, mock_cursor = mock_db
         mock_put = MagicMock()
-        monkeypatch.setattr(db_mod, "put_conn", mock_put)
+        monkeypatch.setattr(hist, "put_conn", mock_put)
 
         hist.save_turn("conv-release", "q", "a")
         mock_put.assert_called_once_with(mock_conn)

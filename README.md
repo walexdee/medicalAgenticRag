@@ -99,7 +99,7 @@ Streaming RAG query endpoint (SSE).
 
 **SSE Events:**
 ```
-data: {"type": "meta", "source": "Medical Q&A Collection", "routing": "Retrieve_QnA", ...}
+data: {"type": "meta", "source": "Medical Q&A Collection", "routing": "medical_knowledge", ...}
 
 data: {"type": "token", "token": "Contra"}
 data: {"type": "token", "token": "indications"}
@@ -118,7 +118,7 @@ Non-streaming RAG query endpoint.
   "answer": "Contraindications include active infections...",
   "source": "Medical Q&A Collection",
   "confidence": 0.9,
-  "source_info": { "routing": "Retrieve_QnA", "reason": "..." },
+  "source_info": { "routing": "medical_knowledge", "reason": "..." },
   "relevance": { "is_relevant": true, "reason": "..." },
   "iteration_count": 1,
   "timestamp": "2025-03-06T10:30:45.123456"
@@ -147,7 +147,7 @@ Ingest medical data into PostgreSQL (pgvector).
 ## Workflow
 
 1. **Router** reads the query and decides retrieval source (QnA / Device / Web)
-2. **Retriever** fetches relevant documents from ChromaDB or DuckDuckGo
+2. **Retriever** fetches relevant documents from PostgreSQL/pgvector or DuckDuckGo
 3. **Relevance Checker** validates if context answers the question
    - If relevant → proceeds to augmentation
    - If not relevant → falls back to web search (max 3 iterations)
@@ -218,7 +218,7 @@ All AWS infrastructure is defined in [terraform/](terraform/). It provisions:
 - **ECS Fargate** — backend container
 - **ECR** — Docker image registry
 - **ALB** — public load balancer
-- **RDS PostgreSQL 16** — vector store + conversation history (replaces EFS + SQLite + ChromaDB)
+- **RDS PostgreSQL 16** — vector store + conversation history
 - **S3 + CloudFront** — React frontend hosting
 - **Secrets Manager** — `OPENAI_API_KEY`, `DATABASE_URL`, and `API_KEY`
 
@@ -238,7 +238,7 @@ terraform plan
 - **Rate limiting** — already implemented (20 req/min per IP via `slowapi`)
 - **API key auth** — already implemented (`API_KEY` env var + `X-API-Key` header)
 - **CORS** — already restricted via `ALLOWED_ORIGINS` env var
-- **PostgreSQL + pgvector** — already implemented (replaces ChromaDB + SQLite)
+- **PostgreSQL + pgvector** — vector store and conversation history
 - Add monitoring (Prometheus/Grafana)
 - Cache frequent queries with Redis
 - Use HTTPS/TLS
@@ -263,6 +263,4 @@ terraform plan
 - **Architecture & Data Flow**: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **API Docs**: http://localhost:8000/docs
 
-## License
 
-MIT

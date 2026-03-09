@@ -2,197 +2,146 @@
 
 ## What Was Built
 
-A **production-grade Agentic RAG system** for medical knowledge with:
+A **production-grade Agentic RAG system** for medical knowledge retrieval, with LangGraph-based dynamic routing, streaming responses, and full AWS deployment via Terraform.
 
-### Backend (FastAPI + LangGraph)
+---
 
-Structured as a Python package under `backend/`:
+## File Reference
 
-| File | Purpose |
-|------|---------|
-| `backend/config.py` | Constants, env vars, JSON log formatter |
-| `backend/models.py` | Pydantic schemas + `GraphState` TypedDict |
-| `backend/auth.py` | `require_api_key` dependency — checks `X-API-Key` header |
-| `backend/limiter.py` | Shared `slowapi` rate-limiter (20 req/min per IP) |
-| `backend/db.py` | Shared psycopg2 `ThreadedConnectionPool` (`get_conn()`/`put_conn()`) |
-| `backend/history.py` | PostgreSQL conversation store (`conversation_turns` table) |
-| `backend/vector_store.py` | pgvector tables, HNSW indexes, `init_schema()`, `query_qna()`, `query_device()`, `count_*()`, ingest |
-| `backend/pipeline/state.py` | `compute_confidence()` heuristic |
-| `backend/pipeline/nodes.py` | All LangGraph node functions + LLM helper |
-| `backend/pipeline/graph.py` | `build_agentic_rag()`, `query_rag()`, `stream_rag_response()` |
-| `backend/routes/query.py` | `POST /api/query`, `POST /api/query/stream` (auth + rate limited) |
-| `backend/routes/health.py` | `GET /api/health`, `POST /api/ingest`, `GET /` |
-| `backend/main.py` | FastAPI app, CORS, rate limiter, request ID middleware |
-
-### Frontend (React)
-
-Structured under `src/`:
+### Backend (`backend/`)
 
 | File | Purpose |
 |------|---------|
-| `src/index.js` | React entry point |
-| `src/App.jsx` | Main shell (state, SSE stream consumption, layout) |
-| `src/constants.js` | `SOURCE_COLORS`, `SAMPLE_QUESTIONS`, `API_BASE` |
-| `src/components/Header.jsx` | Top bar with status badges |
-| `src/components/MessageBubble.jsx` | Message rendering with streaming cursor + confidence badge |
-| `src/components/TypingIndicator.jsx` | Animated loading dots |
+| `config.py` | Constants, env vars, JSON log formatter |
+| `models.py` | Pydantic request/response schemas + `GraphState` TypedDict |
+| `auth.py` | `require_api_key` FastAPI dependency — checks `X-API-Key` header |
+| `limiter.py` | Shared `slowapi` rate-limiter (20 req/min per IP) |
+| `db.py` | psycopg2 `ThreadedConnectionPool`; `get_conn()` (plain) and `get_vector_conn()` (pgvector adapter registered) |
+| `history.py` | PostgreSQL conversation store (`conversation_turns` table) |
+| `vector_store.py` | pgvector tables with HNSW indexes; `init_schema()`, `query_qna()`, `query_device()`, `ingest_data()` |
+| `pipeline/state.py` | `compute_confidence()` heuristic — no extra LLM call |
+| `pipeline/nodes.py` | All LangGraph node functions: `router_node`, `retrieve_clinical`, `retrieve_device`, `web_search`, `check_relevance`, `augment`, `generate` |
+| `pipeline/graph.py` | `build_agentic_rag()` graph builder; `query_rag()` executor; `stream_rag_response()` SSE generator |
+| `routes/query.py` | `POST /api/query` and `POST /api/query/stream` (auth + rate limited) |
+| `routes/health.py` | `GET /api/health`, `POST /api/ingest`, `GET /` |
+| `main.py` | FastAPI app init, CORS middleware, rate limiter mount, request-ID middleware |
 
-### Data
+### Frontend (`src/`)
 
 | File | Purpose |
 |------|---------|
-| `data/generate_data.py` | Synthetic CSV generator |
-| `data/medical_q_n_a.csv` | 1000-row Q&A dataset |
-| `data/medical_device_manuals_dataset.csv` | 1000-row device dataset |
+| `agentic_rag_app.jsx` | Full chat UI: SSE stream consumption, message state, routing badges, confidence scores, streaming cursor |
+
+### Data (`data/`)
+
+| File | Purpose |
+|------|---------|
+| `generate_data.py` | Generates synthetic datasets using all `CONDITIONS × QNA_TEMPLATES` combinations for unique rows |
+| `medical_q_n_a.csv` | 1000-row Q&A dataset (~298 unique pairs after deduplication) |
+| `medical_device_manuals_dataset.csv` | 1000-row device manual dataset |
 
 ### Infrastructure
 
 | File | Purpose |
 |------|---------|
 | `requirements.txt` | Python dependencies |
-| `package.json` | Node.js dependencies + `postinstall` (creates `.venv` + pip install) |
+| `package.json` | Node.js deps + `postinstall` script (creates `.venv` + pip install) |
 | `.env.example` | Secrets template |
-| `Dockerfile` | Container image (uvicorn entrypoint) |
+| `.env.production` | Frontend build env — sets `REACT_APP_API_URL` to the ALB URL before `npm run build` |
+| `Dockerfile` | Backend container image (uvicorn entrypoint, `linux/amd64`) |
 | `docker-compose.yml` | Local full-stack orchestration |
-| `terraform/main.tf` | AWS provider config, remote state backend |
-| `terraform/variables.tf` | All configurable inputs (region, CPU, secrets, etc.) |
-| `terraform/vpc.tf` | VPC, public/private subnets, IGW, NAT Gateway, security groups |
-| `terraform/iam.tf` | ECS execution + task IAM roles |
-| `terraform/secrets.tf` | Secrets Manager for `OPENAI_API_KEY`, `API_KEY`, and `DATABASE_URL` |
-| `terraform/ecr.tf` | ECR repo + image lifecycle policy |
-| `terraform/rds.tf` | RDS PostgreSQL 16 + DB subnet group + parameter group |
-| `terraform/alb.tf` | ALB, target group, HTTP listener, CloudWatch log group |
-| `terraform/ecs.tf` | Fargate cluster, task definition (secrets incl. `DATABASE_URL`), rolling service |
-| `terraform/s3_cloudfront.tf` | Private S3 bucket + CloudFront OAC distribution |
-| `terraform/outputs.tf` | ALB URL, CloudFront URL, ECR URL, cluster/service names |
 
-## Architecture Overview
+### Terraform (`terraform/`)
+
+| File | Purpose |
+|------|---------|
+| `main.tf` | AWS provider, Terraform version constraint, optional S3 remote state |
+| `variables.tf` | All inputs: region, CPU/memory, secrets, DB class, frontend domain |
+| `outputs.tf` | `backend_url`, `frontend_url`, `ecr_repository_url`, `s3_frontend_bucket`, `rds_endpoint` |
+| `vpc.tf` | VPC, public/private subnets across 2 AZs, IGW, NAT Gateway, security groups |
+| `iam.tf` | ECS execution role (ECR + CloudWatch + Secrets Manager) + task role |
+| `secrets.tf` | Secrets Manager secrets: `OPENAI_API_KEY`, `API_KEY`, `DATABASE_URL` |
+| `ecr.tf` | ECR repository + image lifecycle policy |
+| `rds.tf` | RDS PostgreSQL 16 in private subnets; custom parameter group; pgvector-compatible |
+| `alb.tf` | Application Load Balancer, target group, HTTP listener, CloudWatch log group |
+| `ecs.tf` | Fargate cluster + task definition (secrets injected from Secrets Manager) + rolling-update service |
+| `s3_cloudfront.tf` | Private S3 bucket + CloudFront distribution with OAC (no public bucket access) |
+
+---
+
+## Agentic Pipeline
+
+The pipeline is a LangGraph directed graph with conditional edges:
 
 ```
-User Input
-    ↓
-src/App.jsx  (sendMessage)
-    ├─ POST /api/query/stream  (SSE)
-    └─ Reads token-by-token stream
-    ↓
-backend/routes/query.py  (api_query_stream)
-    ├─ get_history(conversation_id)
-    └─ stream_rag_response(query, history)
-    ↓
-backend/pipeline/graph.py  (stream_rag_response)
-    ├─ [thread pool] query_rag() → full LangGraph pipeline
-    │       ↓
-    │   Router → Retrieve_QnA / Retrieve_Device / Web_Search
-    │       ↓
-    │   Relevance_Checker (up to MAX_ITERATIONS=3)
-    │       ↓
-    │   Augment → Generate
-    ├─ Emit: SSE meta event (source, routing, relevance)
-    ├─ Emit: SSE token events (streamed from OpenAI)
-    └─ Emit: SSE done event (answer, confidence, timestamp)
-    ↓
-src/components/MessageBubble.jsx
-    ├─ Shows source badge + routing reason
-    ├─ Shows confidence score (color-coded)
-    ├─ Streams tokens with blinking cursor
-    └─ Shows timestamp + iteration count when done
+START → Router → [retrieve_clinical | retrieve_device | web_search]
+                           ↓
+              check_relevance
+                ├── relevant   → augment → generate → END
+                └── irrelevant → web_search → check_relevance (max 3 loops)
 ```
 
-## How to Start
+- **router** and **check_relevance** both use `temperature=0` for deterministic decisions
+- **web_search** uses DuckDuckGo — no API key required
+- The loop cap (`MAX_ITERATIONS=3`) prevents runaway retries
 
-```bash
-# Terminal 1: Backend
-source .venv/bin/activate
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+---
 
-# Terminal 2: Frontend
-npm start
-```
+## Key Design Decisions
 
-## Key Features
+**pgvector connection split**
+`get_conn()` returns a plain connection for schema DDL. `get_vector_conn()` calls `register_vector(conn)` for vector operations. This ensures the pgvector adapter is registered only after `CREATE EXTENSION vector` has run.
 
-- **Streaming responses** — SSE via `POST /api/query/stream`
-- **Persistent conversation history** — PostgreSQL-backed, survives restarts
-- **Confidence scores** — heuristic badge (no extra LLM call)
-- **Intelligent routing** — LLM routes each query to best source
-- **Relevance checking** — fallback to web search if retrieved context is off-topic
-- **DuckDuckGo fallback** — free web search, no API key required
-- **API key auth** — optional `X-API-Key` header (set `API_KEY` env var to enable)
-- **Rate limiting** — 20 req/min per IP via `slowapi`
-- **JSON structured logs** — every log line is JSON with `request_id` for tracing
+**Stable upsert IDs**
+Vector store IDs are MD5 hashes of the source text (`hashlib.md5(question.encode()).hexdigest()`). Re-ingesting the same data is safe — rows are updated in place via `ON CONFLICT (id) DO UPDATE`.
 
-## Confidence Score Heuristic
+**Data generation uniqueness**
+`generate_data.py` uses nested loops over all `CONDITIONS × QNA_TEMPLATES` combinations, producing ~298 unique Q&A pairs. Ingest also calls `drop_duplicates()` as a safety net.
 
-Computed in `backend/pipeline/state.py`:
+**Frontend API URL baked at build time**
+`REACT_APP_API_URL` must be set in `.env.production` before running `npm run build`. React's `process.env` substitution happens at compile time, not runtime. After updating S3, invalidate the CloudFront cache to push the new bundle to edge nodes.
 
-| Condition | Score |
-|-----------|-------|
-| Medical Q&A Collection | 90% |
-| Medical Device Manual | 85% |
-| Web Search (working) | 65% |
-| Web Search (failed) | 40% |
-| Context not relevant | −15% |
-| Each extra iteration | −8% |
+**Docker platform**
+Always build the backend image with `--platform linux/amd64`. ECS Fargate runs x86_64 regardless of the build machine architecture.
+
+---
 
 ## Configuration
 
-All constants in `backend/config.py`. Override with environment variables:
+All constants in `backend/config.py` — override with environment variables:
 
 ```python
-LLM_MODEL = "gpt-4o-mini"
-EMBED_MODEL = "text-embedding-3-small"
-DATABASE_URL = "postgresql://localhost/medical_rag"   # override via .env
-N_RESULTS = 5
-MAX_ITERATIONS = 3
+LLM_MODEL         = "gpt-4o-mini"
+EMBED_MODEL       = "text-embedding-3-small"
+DATABASE_URL      = "postgresql://localhost/medical_rag"
+N_RESULTS         = 5
+MAX_ITERATIONS    = 3
 MAX_HISTORY_TURNS = 10
-
-# Production overrides (set in .env):
-ALLOWED_ORIGINS = "http://localhost:3000"   # Comma-separated CORS origins
-API_KEY = ""                                # Enables X-API-Key auth when set
+ALLOWED_ORIGINS   = "http://localhost:3000"
+API_KEY           = ""
 ```
 
-Frontend API endpoint in `src/constants.js`:
-```javascript
-export const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
-```
+---
 
 ## Common Customizations
 
-- **Change LLM**: edit `LLM_MODEL` in `backend/config.py`
-- **More retrieval results**: increase `N_RESULTS`
-- **Change routing logic**: edit `router_node` in `backend/pipeline/nodes.py`
-- **Change augment prompt**: edit `augment_node` in `backend/pipeline/nodes.py`
-- **Add new SSE event types**: edit `stream_rag_response` in `backend/pipeline/graph.py`
-- **Add new UI components**: add to `src/components/`
+| Goal | Where to change |
+|------|----------------|
+| Switch LLM model | `LLM_MODEL` in `backend/config.py` |
+| Retrieve more documents | `N_RESULTS` in `backend/config.py` |
+| Change routing logic | `router_node()` in `backend/pipeline/nodes.py` |
+| Change answer prompt | `augment()` in `backend/pipeline/nodes.py` |
+| Add a new SSE event type | `stream_rag_response()` in `backend/pipeline/graph.py` |
+| Add a new UI component | `src/components/` |
+| Add a new data source | New table in `vector_store.py` + new node in `nodes.py` + new edge in `graph.py` |
 
-## Deployment
+---
 
-### Docker
-```bash
-docker build -t medical-rag .
-docker run -p 8000:8000 --env-file .env medical-rag
-```
+## Documentation Index
 
-### Docker Compose
-```bash
-docker-compose up
-```
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| `ModuleNotFoundError` | `npm install` (re-runs postinstall to recreate `.venv`) |
-| `OPENAI_API_KEY not found` | `cp .env.example .env` + add your key |
-| `DATABASE_URL not set` | Add `DATABASE_URL=postgresql://...` to `.env` |
-| PostgreSQL connection error | Check DB is running: `pg_isready`; verify credentials |
-| pgvector extension missing | Run `CREATE EXTENSION vector;` as superuser |
-| Port already in use | `lsof -ti :8000 \| xargs kill -9` |
-| Frontend can't connect | Verify backend: `curl http://localhost:8000/api/health` |
-
-## Documentation
-
-- **QUICKSTART.md** — 5-minute setup
-- **SETUP.md** — Full deployment guide
-- **ARCHITECTURE.md** — System design, data flow, LangGraph workflow
-- **API Docs** — http://localhost:8000/docs
+| File | Contents |
+|------|---------|
+| [QUICKSTART.md](QUICKSTART.md) | 5-minute local setup |
+| [SETUP.md](SETUP.md) | Full setup + AWS deployment |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, data flow, LangGraph workflow |
+| http://localhost:8000/docs | Interactive API documentation (Swagger UI) |

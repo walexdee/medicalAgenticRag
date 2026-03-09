@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { API_BASE, SAMPLE_QUESTIONS } from "./constants";
+import { API_BASE } from "./constants";
 import Header from "./components/Header";
 import MessageBubble from "./components/MessageBubble";
 
@@ -98,20 +98,19 @@ export default function App() {
   };
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f172a", fontFamily: "'DM Mono', 'JetBrains Mono', monospace", color: "#e2e8f0" }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#ffffff", fontFamily: "'DM Mono', 'JetBrains Mono', monospace, 'Space Grotesk', sans-serif", color: "#111827" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
         * { box-sizing:border-box; margin:0; padding:0; }
         ::-webkit-scrollbar { width:4px; }
         ::-webkit-scrollbar-track { background:transparent; }
-        ::-webkit-scrollbar-thumb { background:#334155; border-radius:4px; }
+        ::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:4px; }
         textarea:focus { outline:none; }
         textarea { resize:none; }
         @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
         @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
         .msg-in { animation: fadeIn 0.3s ease; }
-        .chip:hover { filter:brightness(1.15); cursor:pointer; }
         .status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
         .status-healthy { background:#10b981; }
         .status-unhealthy { background:#f59e0b; }
@@ -122,23 +121,15 @@ export default function App() {
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 20px", maxWidth: 800, width: "100%", margin: "0 auto" }}>
         {messages.length === 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 32 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%" }}>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🩺</div>
-              <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 22, fontWeight: 700, color: "#f1f5f9", marginBottom: 8 }}>
+              <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 22, fontWeight: 700, color: "#111827", marginBottom: 8 }}>
                 Medical Knowledge System
               </div>
-              <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.8, maxWidth: 420, textAlign: "center" }}>
+              <div style={{ color: "#6b7280", fontSize: 13, lineHeight: 1.8, maxWidth: 420, textAlign: "center" }}>
                 Agentic RAG with intelligent routing across medical Q&A, device manuals, and live web search.
               </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, width: "100%", maxWidth: 560 }}>
-              {SAMPLE_QUESTIONS.map((q) => (
-                <button key={q} className="chip" onClick={() => sendMessage(q)}
-                  style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 12, color: "#94a3b8", padding: "12px 14px", fontSize: 12, lineHeight: 1.5, textAlign: "left", cursor: "pointer", transition: "all 0.2s" }}>
-                  {q}
-                </button>
-              ))}
             </div>
           </div>
         ) : (
@@ -151,32 +142,32 @@ export default function App() {
         <div ref={bottomRef} />
       </div>
 
-      <div style={{ borderTop: "1px solid #1e293b", padding: "16px 20px", background: "rgba(15,23,42,0.95)", backdropFilter: "blur(12px)" }}>
+      <div style={{ borderTop: "1px solid #e5e7eb", padding: "16px 20px", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)" }}>
         <div style={{ maxWidth: 800, margin: "0 auto", display: "flex", gap: 10, alignItems: "flex-end" }}>
           <div
-            style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 14, padding: "12px 16px", display: "flex", gap: 10, alignItems: "flex-end", transition: "border-color 0.2s" }}
+            style={{ flex: 1, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 14, padding: "12px 16px", display: "flex", gap: 10, alignItems: "flex-end", transition: "border-color 0.2s" }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "#334155")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#e5e7eb")}
           >
             <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKey}
               placeholder="Ask about medical conditions, devices, or recent news…"
               rows={1} disabled={apiStatus === "disconnected" || loading}
-              style={{ flex: 1, background: "transparent", border: "none", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", lineHeight: 1.5, maxHeight: 120, overflowY: "auto", opacity: apiStatus === "disconnected" ? 0.5 : 1 }}
+              style={{ flex: 1, background: "transparent", border: "none", color: "#111827", fontSize: 14, fontFamily: "inherit", lineHeight: 1.5, maxHeight: 120, overflowY: "auto", opacity: apiStatus === "disconnected" ? 0.5 : 1 }}
             />
           </div>
           <button onClick={() => sendMessage()} disabled={!input.trim() || loading || apiStatus === "disconnected"}
             style={{
               width: 44, height: 44, borderRadius: 12, fontSize: 18, flexShrink: 0,
-              background: input.trim() && !loading && apiStatus !== "disconnected" ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "#1e293b",
-              border: input.trim() && !loading && apiStatus !== "disconnected" ? "none" : "1px solid #334155",
-              color: input.trim() && !loading && apiStatus !== "disconnected" ? "#fff" : "#475569",
+              background: input.trim() && !loading && apiStatus !== "disconnected" ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "#f3f4f6",
+              border: input.trim() && !loading && apiStatus !== "disconnected" ? "none" : "1px solid #e5e7eb",
+              color: input.trim() && !loading && apiStatus !== "disconnected" ? "#fff" : "#9ca3af",
               cursor: input.trim() && !loading && apiStatus !== "disconnected" ? "pointer" : "default",
               transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center",
             }}>
             {loading ? "⟳" : "↑"}
           </button>
         </div>
-        <div style={{ maxWidth: 800, margin: "6px auto 0", textAlign: "center", fontSize: 10, color: "#334155", letterSpacing: 0.5 }}>
+        <div style={{ maxWidth: 800, margin: "6px auto 0", textAlign: "center", fontSize: 10, color: "#9ca3af", letterSpacing: 0.5 }}>
           ROUTES: QnA DB · Device Manual · Web Search · Relevance Check · Max 3 iterations
         </div>
       </div>

@@ -1,8 +1,7 @@
 # ──────────────────────────────────────────────────────────
 # RDS — PostgreSQL 16 with pgvector extension
 #
-# Replaces both ChromaDB (EFS) and SQLite (EFS) with a single
-# managed database. Runs in private subnets; accessible only
+# Managed database running in private subnets; accessible only
 # from ECS tasks via the rds security group.
 # ──────────────────────────────────────────────────────────
 

@@ -15,112 +15,137 @@ npm start
 
 ## Step-by-Step
 
-### 1. Install Dependencies (First time only)
+### 1. Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- PostgreSQL 17 with pgvector
+
+Install PostgreSQL 17 (macOS):
+```bash
+brew install postgresql@17
+brew services start postgresql@17
+echo 'export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Install PostgreSQL 17 (Ubuntu/Debian):
+```bash
+sudo apt install -y postgresql-17 postgresql-17-pgvector
+sudo systemctl start postgresql
+```
+
+### 2. Create the Database
 
 ```bash
+createdb medical_rag
+psql medical_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+> The `vector` extension must exist before the backend starts. Tables are created automatically on first startup.
+
+### 3. Install Dependencies
+
+```bash
+git clone https://github.com/yourusername/medicalAgenticRag.git
+cd medicalAgenticRag
 npm install
 ```
 
-This installs all Node packages **and** automatically creates a Python virtual environment (`.venv`) and installs all Python packages via the `postinstall` script in `package.json`.
+This installs all Node packages **and** automatically creates `.venv` and installs all Python packages via the `postinstall` script in `package.json`.
 
-### 2. Configure API Keys & Database
+### 4. Configure Environment
 
 ```bash
 cp .env.example .env
-# Edit .env and add:
-# OPENAI_API_KEY=sk-...
-# DATABASE_URL=postgresql://postgres:password@localhost/medical_rag
 ```
 
-Create the database (first time only):
+Edit `.env`:
+```
+OPENAI_API_KEY=sk-...
+DATABASE_URL=postgresql://<your-system-username>@localhost/medical_rag
+API_HOST=0.0.0.0
+API_PORT=8000
+```
+
+> On macOS, `<your-system-username>` is the output of `whoami`. No password is needed for a local PostgreSQL install.
+
+### 5. Generate Data
+
 ```bash
-psql -U postgres -c "CREATE DATABASE medical_rag;"
-# Tables and pgvector extension are created automatically on first backend start
+source .venv/bin/activate
+python data/generate_data.py
 ```
 
-### 3. Run Backend (Terminal 1)
+This creates `data/medical_q_n_a.csv` (1000 rows, ~298 unique Q&A pairs) and `data/medical_device_manuals_dataset.csv` (1000 device records).
+
+### 6. Start the Backend
 
 ```bash
 source .venv/bin/activate
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Expected output (JSON structured logs):
+Expected output:
 ```
 INFO:     Uvicorn running on http://0.0.0.0:8000
-{"time": "...", "level": "INFO", "logger": "backend.main", "message": "Starting Medical Agentic RAG Backend"}
-{"time": "...", "level": "INFO", "logger": "backend.main", "message": "PostgreSQL schema ready"}
+{"level": "INFO", "message": "PostgreSQL schema ready"}
 ```
 
-### 4. Run Frontend (Terminal 2)
+### 7. Ingest Data
 
 ```bash
-npm start
-```
-
-Browser opens at http://localhost:3000
-
-### 5. Test It
-
-1. Click a sample question or type your own
-2. Watch the response stream in token-by-token
-3. Check the source badge, confidence score, and routing info in each response
-
-## Verify Setup
-
-### Backend Health
-```bash
-curl http://localhost:8000/api/health | jq
+curl -X POST http://localhost:8000/api/ingest
 ```
 
 Expected response:
 ```json
+{"status": "ok", "qa": 298, "device": 500}
+```
+
+### 8. Start the Frontend
+
+```bash
+# New terminal
+npm start
+```
+
+Browser opens at http://localhost:3000.
+
+## Verify Setup
+
+```bash
+curl http://localhost:8000/api/health | python3 -m json.tool
+```
+
+Expected:
+```json
 {
   "status": "healthy",
-  "version": "1.0.0",
   "models": { "llm": "gpt-4o-mini", "embeddings": "text-embedding-3-small" },
-  "databases": { "database_url": "localhost/medical_rag", "qa_collection_count": 500, "device_collection_count": 500 }
+  "databases": { "qa_collection_count": 298, "device_collection_count": 500 }
 }
 ```
 
-### Test Streaming Query
-```bash
-curl -X POST http://localhost:8000/api/query/stream \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is diabetes?", "conversation_id": "test-123"}'
-```
+## Test Queries
 
-### Test Non-Streaming Query
-```bash
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is diabetes?"}'
-```
+| Query | Expected Route |
+|-------|---------------|
+| "What are symptoms of diabetes?" | Medical Q&A |
+| "Contraindications for a pacemaker?" | Device Manual |
+| "Latest COVID-19 antiviral medications?" | Web Search |
 
 ## What You Get
 
-- **Backend API** on http://localhost:8000
-- **Frontend UI** on http://localhost:3000
-- **API Documentation** on http://localhost:8000/docs
-- **Streaming responses** via SSE (token-by-token)
-- **Conversation history** per session
-- **Confidence scores** on every response
-- **Vector Database** (PostgreSQL + pgvector) with 500 Q&A + 500 Device records
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| `ModuleNotFoundError` | `npm install` (re-runs postinstall) |
-| `OPENAI_API_KEY not found` | `cp .env.example .env` + add your key |
-| `DATABASE_URL not set` | Add `DATABASE_URL=postgresql://...` to `.env` |
-| PostgreSQL connection failed | Check DB is running: `pg_isready` |
-| Backend won't start | Check Python 3.10+: `python3 --version` |
-| Frontend can't connect | Verify backend runs: `curl http://localhost:8000/api/health` |
-| Port already in use | `lsof -ti :8000 \| xargs kill -9` then restart |
+- **Backend API** at http://localhost:8000
+- **Frontend UI** at http://localhost:3000
+- **API Documentation** at http://localhost:8000/docs
+- Streaming responses (token-by-token via SSE)
+- Confidence scores and routing badges on every response
+- Persistent conversation history per session
 
 ## Documentation
 
-- **Full Setup**: See [SETUP.md](SETUP.md)
-- **Architecture**: See [ARCHITECTURE.md](ARCHITECTURE.md)
-- **API Docs**: Visit http://localhost:8000/docs
+- **Full Setup & Deployment**: [SETUP.md](SETUP.md)
+- **Architecture & Data Flow**: [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Implementation Details**: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)

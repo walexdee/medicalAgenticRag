@@ -33,9 +33,3 @@ export const SOURCE_COLORS = {
   },
 };
 
-export const SAMPLE_QUESTIONS = [
-  "What are treatments for Kawasaki disease?",
-  "What devices are used in neonatal intensive care?",
-  "Latest COVID-19 antiviral medications?",
-  "Contraindications for a pacemaker?",
-];

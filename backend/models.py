@@ -44,8 +44,8 @@ class GraphState(TypedDict):
     prompt: str
     response: str
     source: str
-    source_routing: str
-    source_reason: str
+    routed_to: str
+    routing_reason: str
     is_relevant: str
     relevance_reason: Optional[str]
     iteration_count: int

@@ -8,7 +8,7 @@ export default function TypingIndicator() {
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: "#64748b",
+            background: "#9ca3af",
             animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
           }}
         />

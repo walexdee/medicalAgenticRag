@@ -30,8 +30,8 @@ async def api_query(request: Request, body: QueryRequest):
             answer=answer,
             source=result["source"],
             source_info=SourceInfo(
-                routing=result["source_routing"],
-                reason=result["source_reason"],
+                routing=result["routed_to"],
+                reason=result["routing_reason"],
             ),
             relevance=RelevanceInfo(
                 is_relevant=result["is_relevant"].lower() == "yes",

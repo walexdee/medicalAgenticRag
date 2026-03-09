@@ -12,9 +12,9 @@ from backend.config import OPENAI_API_KEY, LLM_MODEL
 from backend.models import GraphState
 from backend.pipeline.nodes import (
     router_node, route_decision,
-    retrieve_qna, retrieve_device, web_search_node,
-    relevance_checker, relevance_decision,
-    augment_node, generate_node,
+    retrieve_clinical, retrieve_device, web_search,
+    check_relevance, relevance_decision,
+    augment, generate,
 )
 from backend.pipeline.state import compute_confidence
 
@@ -25,39 +25,39 @@ _openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 @lru_cache(maxsize=1)
 def build_agentic_rag():
-    """Build and compile the LangGraph workflow (cached)."""
+    """Build and compile the LangGraph pipeline (cached for the process lifetime)."""
     workflow = StateGraph(GraphState)
 
-    workflow.add_node("Router", router_node)
-    workflow.add_node("Retrieve_QnA", retrieve_qna)
-    workflow.add_node("Retrieve_Device", retrieve_device)
-    workflow.add_node("Web_Search", web_search_node)
-    workflow.add_node("Relevance_Checker", relevance_checker)
-    workflow.add_node("Augment", augment_node)
-    workflow.add_node("Generate", generate_node)
+    workflow.add_node("router",            router_node)
+    workflow.add_node("retrieve_clinical", retrieve_clinical)
+    workflow.add_node("retrieve_device",   retrieve_device)
+    workflow.add_node("web_search",        web_search)
+    workflow.add_node("relevance_check",   check_relevance)
+    workflow.add_node("augment",           augment)
+    workflow.add_node("generate",          generate)
 
-    workflow.add_edge(START, "Router")
+    workflow.add_edge(START, "router")
     workflow.add_conditional_edges(
-        "Router",
+        "router",
         route_decision,
         {
-            "Retrieve_QnA": "Retrieve_QnA",
-            "Retrieve_Device": "Retrieve_Device",
-            "Web_Search": "Web_Search",
+            "medical_knowledge": "retrieve_clinical",
+            "device_manual": "retrieve_device",
+            "web_search":    "web_search",
         },
     )
-    workflow.add_edge("Retrieve_QnA", "Relevance_Checker")
-    workflow.add_edge("Retrieve_Device", "Relevance_Checker")
-    workflow.add_edge("Web_Search", "Relevance_Checker")
+    workflow.add_edge("retrieve_clinical", "relevance_check")
+    workflow.add_edge("retrieve_device",   "relevance_check")
+    workflow.add_edge("web_search",        "relevance_check")
     workflow.add_conditional_edges(
-        "Relevance_Checker",
+        "relevance_check",
         relevance_decision,
-        {"Yes": "Augment", "No": "Web_Search"},
+        {"Yes": "augment", "No": "web_search"},
     )
-    workflow.add_edge("Augment", "Generate")
-    workflow.add_edge("Generate", END)
+    workflow.add_edge("augment",  "generate")
+    workflow.add_edge("generate", END)
 
-    logger.info("LangGraph workflow compiled")
+    logger.info("LangGraph pipeline compiled")
     return workflow.compile()
 
 
@@ -69,8 +69,8 @@ def query_rag(question: str, history: Optional[List[dict]] = None) -> dict:
         "prompt": "",
         "response": "",
         "source": "",
-        "source_routing": "",
-        "source_reason": "",
+        "routed_to":      "",
+        "routing_reason": "",
         "is_relevant": "",
         "relevance_reason": None,
         "iteration_count": 0,
@@ -92,8 +92,8 @@ async def stream_rag_response(question: str, history: Optional[List[dict]] = Non
             "type": "meta",
             "source": state["source"],
             "source_info": {
-                "routing": state["source_routing"],
-                "reason": state["source_reason"],
+                "routing": state["routed_to"],
+                "reason":  state["routing_reason"],
             },
             "relevance": {
                 "is_relevant": state["is_relevant"].lower() == "yes",

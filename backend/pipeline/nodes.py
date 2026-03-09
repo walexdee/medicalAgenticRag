@@ -24,44 +24,44 @@ def get_llm_response(prompt: str, temperature: float = 0.5) -> str:
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"LLM Error: {str(e)}")
+        logger.error(f"LLM error: {e}")
         raise
 
 
 def router_node(state: GraphState) -> GraphState:
-    prompt = f"""You are a medical routing agent.
+    prompt = f"""You are a medical query router. Read the question below and decide which knowledge source is most appropriate.
 
-Query: "{state['query']}"
+Question: "{state['query']}"
 
-Route to ONE option:
-- Retrieve_QnA: Medical conditions, symptoms, treatments, diagnoses, drugs, diseases (e.g. diabetes, hypertension, medications)
-- Retrieve_Device: Medical equipment or devices — anything involving a named device, machine, monitor, scanner, pump, implant, or its indications, contraindications, calibration, or operation (e.g. pacemaker, MRI, ventilator, insulin pump)
-- Web_Search: Current news, recent events, prices, or data not covered above
+Choose exactly one:
+- medical_knowledge: General medical knowledge — conditions, symptoms, diagnoses, treatments, medications, pathophysiology
+- device_manual: Medical equipment and devices — named devices, implants, scanners, monitors, pumps, and their indications, contraindications, or operation
+- web_search: Anything requiring current information — recent guidelines, news, drug approvals, or data not covered by the above
 
-Respond ONLY with: Retrieve_QnA, Retrieve_Device, or Web_Search"""
+Reply with only the option name, nothing else."""
 
     decision = get_llm_response(prompt, temperature=0).strip()
-    valid = {"Retrieve_QnA", "Retrieve_Device", "Web_Search"}
-    state["source"] = decision if decision in valid else "Web_Search"
-    state["source_routing"] = state["source"]
-    state["source_reason"] = f"Routed to {state['source_routing']}"
-    logger.info(f"Router decision: {state['source']}")
+    valid = {"medical_knowledge", "device_manual", "web_search"}
+    state["routed_to"] = decision if decision in valid else "web_search"
+    state["source"] = state["routed_to"]
+    state["routing_reason"] = f"Routed to {state['routed_to']}"
+    logger.info(f"Router decision: {state['routed_to']}")
     return state
 
 
 def route_decision(state: GraphState) -> str:
-    return state["source"]
+    return state["routed_to"]
 
 
-def retrieve_qna(state: GraphState) -> GraphState:
+def retrieve_clinical(state: GraphState) -> GraphState:
     try:
         docs = query_qna(state["query"])
         state["context"] = "\n".join(docs)
         state["source"] = "Medical Q&A Collection"
-        logger.info(f"Retrieved {len(docs)} Q&A docs")
+        logger.info(f"Retrieved {len(docs)} clinical docs")
         return state
     except Exception as e:
-        logger.error(f"Q&A retrieval error: {str(e)}")
+        logger.error(f"Clinical retrieval error: {e}")
         state["context"] = ""
         return state
 
@@ -71,15 +71,15 @@ def retrieve_device(state: GraphState) -> GraphState:
         docs = query_device(state["query"])
         state["context"] = "\n".join(docs)
         state["source"] = "Medical Device Manual"
-        logger.info(f"Retrieved {len(docs)} Device docs")
+        logger.info(f"Retrieved {len(docs)} device docs")
         return state
     except Exception as e:
-        logger.error(f"Device retrieval error: {str(e)}")
+        logger.error(f"Device retrieval error: {e}")
         state["context"] = ""
         return state
 
 
-def web_search_node(state: GraphState) -> GraphState:
+def web_search(state: GraphState) -> GraphState:
     try:
         with DDGS() as ddgs:
             results = list(ddgs.text(state["query"], max_results=3))
@@ -88,19 +88,19 @@ def web_search_node(state: GraphState) -> GraphState:
         logger.info("Web search completed")
         return state
     except Exception as e:
-        logger.error(f"Web search error: {str(e)}")
-        state["context"] = f"Search error: {str(e)}"
+        logger.error(f"Web search error: {e}")
+        state["context"] = f"Search error: {e}"
         state["source"] = "Web Search (failed)"
         return state
 
 
-def relevance_checker(state: GraphState) -> GraphState:
-    prompt = f"""Does the following context contain information that helps answer the user's query? Answer Yes if it is even partially relevant or covers the topic. Answer No only if it is completely unrelated.
+def check_relevance(state: GraphState) -> GraphState:
+    prompt = f"""Does the context below contain information that helps answer the question? Answer Yes if it is at least partially relevant. Answer No only if it is completely off-topic.
 
 Context: {state['context'][:600]}
-Query: {state['query']}
+Question: {state['query']}
 
-Answer ONLY with the single word: Yes or No"""
+Answer with one word only: Yes or No"""
 
     try:
         decision = get_llm_response(prompt, temperature=0).strip()
@@ -112,12 +112,12 @@ Answer ONLY with the single word: Yes or No"""
         state["iteration_count"] = count
 
         if count >= MAX_ITERATIONS:
-            logger.info(f"Max iterations ({MAX_ITERATIONS}) reached")
+            logger.info(f"Max iterations ({MAX_ITERATIONS}) reached — proceeding with best available context")
             state["is_relevant"] = "Yes"
 
         return state
     except Exception as e:
-        logger.error(f"Relevance check error: {str(e)}")
+        logger.error(f"Relevance check error: {e}")
         state["is_relevant"] = "Yes"
         return state
 
@@ -136,11 +136,11 @@ def _build_history_block(history: List[dict]) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def augment_node(state: GraphState) -> GraphState:
+def augment(state: GraphState) -> GraphState:
     history_block = _build_history_block(state.get("history", []))
     context = state["context"].strip()
     context_block = f"Retrieved context:\n{context}" if context else "No relevant context was retrieved."
-    state["prompt"] = f"""{history_block}You are a knowledgeable medical assistant. Use the retrieved context as your primary source. If the context does not sufficiently cover the question, supplement your answer with accurate medical knowledge. Keep the response concise (under 120 words).
+    state["prompt"] = f"""{history_block}You are a knowledgeable medical assistant. Use the retrieved context as your primary source. Supplement with accurate medical knowledge where the context falls short. Keep your response concise and under 120 words.
 
 {context_block}
 
@@ -150,14 +150,14 @@ Answer:"""
     return state
 
 
-def generate_node(state: GraphState) -> GraphState:
+def generate(state: GraphState) -> GraphState:
     try:
         state["response"] = get_llm_response(state["prompt"])
         state["confidence"] = compute_confidence(state)
         logger.info(f"Answer generated (confidence: {state['confidence']:.0%})")
         return state
     except Exception as e:
-        logger.error(f"Generation error: {str(e)}")
-        state["response"] = f"Error generating response: {str(e)}"
+        logger.error(f"Generation error: {e}")
+        state["response"] = f"Error generating response: {e}"
         state["confidence"] = 0.0
         return state

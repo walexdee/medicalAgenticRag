@@ -2,11 +2,8 @@
 # S3 Bucket — React static build artefacts
 # ──────────────────────────────────────────────────────────
 
-# Generates a stable 8-character random suffix so the bucket name is globally
-# unique without exposing the AWS account ID. The suffix is stored in state and
-# stays the same across subsequent applies.
 resource "random_id" "bucket_suffix" {
-  byte_length = 4 # produces 8 hex characters
+  byte_length = 4
 }
 
 resource "aws_s3_bucket" "frontend" {
@@ -14,7 +11,6 @@ resource "aws_s3_bucket" "frontend" {
   tags   = { Name = "${var.app_name}-frontend" }
 }
 
-# Block all public access — CloudFront fetches via OAC, not public URLs
 resource "aws_s3_bucket_public_access_block" "frontend" {
   bucket                  = aws_s3_bucket.frontend.id
   block_public_acls       = true
@@ -30,7 +26,6 @@ resource "aws_s3_bucket_versioning" "frontend" {
 
 # ──────────────────────────────────────────────────────────
 # CloudFront Origin Access Control (OAC)
-# Allows CloudFront to read from the private S3 bucket
 # ──────────────────────────────────────────────────────────
 resource "aws_cloudfront_origin_access_control" "frontend" {
   name                              = "${var.app_name}-oac"
@@ -49,9 +44,7 @@ resource "aws_s3_bucket_policy" "frontend" {
     Statement = [{
       Sid    = "AllowCloudFrontServicePrincipal"
       Effect = "Allow"
-      Principal = {
-        Service = "cloudfront.amazonaws.com"
-      }
+      Principal = { Service = "cloudfront.amazonaws.com" }
       Action   = "s3:GetObject"
       Resource = "${aws_s3_bucket.frontend.arn}/*"
       Condition = {
@@ -65,19 +58,66 @@ resource "aws_s3_bucket_policy" "frontend" {
 
 # ──────────────────────────────────────────────────────────
 # CloudFront Distribution
+#
+# Two origins:
+#   s3-frontend  → S3 bucket (React static files, default)
+#   alb-backend  → ALB (FastAPI, matched on /api/* path)
+#
+# This routes all /api/* requests through CloudFront over HTTPS,
+# avoiding mixed-content browser errors when the frontend is on HTTPS.
 # ──────────────────────────────────────────────────────────
 resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   default_root_object = "index.html"
-  price_class         = "PriceClass_100" # US, Canada, Europe only (cheapest)
+  price_class         = "PriceClass_100"
   comment             = "${var.app_name} frontend"
 
+  # Origin 1: S3 (React build)
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "s3-frontend"
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
   }
 
+  # Origin 2: ALB (FastAPI backend)
+  # CloudFront connects to the ALB over HTTP; the browser-to-CloudFront
+  # leg is always HTTPS — this resolves the mixed-content issue.
+  origin {
+    domain_name = aws_lb.backend.dns_name
+    origin_id   = "alb-backend"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Ordered behavior: /api/* → ALB (evaluated before the default)
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    target_origin_id       = "alb-backend"
+    viewer_protocol_policy = "redirect-to-https"
+
+    # Allow all HTTP methods so POST /api/query works
+    allowed_methods = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods  = ["GET", "HEAD"]
+
+    # Forward everything to the backend — headers, query strings, cookies
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]
+      cookies { forward = "all" }
+    }
+
+    # Never cache API responses at the edge
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
+  # Default behavior: all other paths → S3 (React static files)
   default_cache_behavior {
     target_origin_id       = "s3-frontend"
     viewer_protocol_policy = "redirect-to-https"
@@ -90,13 +130,12 @@ resource "aws_cloudfront_distribution" "frontend" {
       cookies { forward = "none" }
     }
 
-    # Cache static assets for 1 day; React's content-hashed filenames bust this automatically
     min_ttl     = 0
     default_ttl = 86400
     max_ttl     = 31536000
   }
 
-  # Return index.html for any unknown path so React Router (client-side routing) works
+  # Return index.html for 403/404 so React client-side routing works
   custom_error_response {
     error_code            = 403
     response_code         = 200
@@ -115,10 +154,6 @@ resource "aws_cloudfront_distribution" "frontend" {
 
   viewer_certificate {
     cloudfront_default_certificate = true
-    # To use a custom domain + ACM cert, replace the line above with:
-    # acm_certificate_arn      = aws_acm_certificate.frontend.arn
-    # ssl_support_method       = "sni-only"
-    # minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = { Name = "${var.app_name}-cloudfront" }

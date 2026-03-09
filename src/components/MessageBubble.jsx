@@ -23,13 +23,13 @@ const BOT_AVATAR = (
       width: 32,
       height: 32,
       borderRadius: "50%",
-      background: "linear-gradient(135deg,#0f172a,#1e293b)",
+      background: "#f3f4f6",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       fontSize: 14,
       flexShrink: 0,
-      border: "1px solid #334155",
+      border: "1px solid #e5e7eb",
     }}
   >
     🏥
@@ -62,7 +62,7 @@ export default function MessageBubble({ msg }) {
     return (
       <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "flex-start" }}>
         {BOT_AVATAR}
-        <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "18px 18px 18px 4px", overflow: "hidden" }}>
+        <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "18px 18px 18px 4px", overflow: "hidden" }}>
           <TypingIndicator />
         </div>
       </div>
@@ -75,9 +75,9 @@ export default function MessageBubble({ msg }) {
         <div
           style={{
             width: 32, height: 32, borderRadius: "50%",
-            background: "linear-gradient(135deg,#0f172a,#1e293b)",
+            background: "#f3f4f6",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 14, flexShrink: 0, border: "1px solid #334155",
+            fontSize: 14, flexShrink: 0, border: "1px solid #e5e7eb",
           }}
         >
           ⚠️
@@ -131,8 +131,8 @@ export default function MessageBubble({ msg }) {
             {msg.source_info?.reason && (
               <span
                 style={{
-                  background: "rgba(100,116,139,0.1)", border: "1px solid #334155",
-                  color: "#94a3b8", borderRadius: 20, padding: "3px 10px", fontSize: 11,
+                  background: "#f3f4f6", border: "1px solid #e5e7eb",
+                  color: "#6b7280", borderRadius: 20, padding: "3px 10px", fontSize: 11,
                 }}
               >
                 {msg.source_info.reason}
@@ -164,10 +164,10 @@ export default function MessageBubble({ msg }) {
 
         <div
           style={{
-            background: "#1e293b", border: "1px solid #334155",
+            background: "#f9fafb", border: "1px solid #e5e7eb",
             borderRadius: "4px 18px 18px 18px", padding: "14px 16px",
-            color: "#e2e8f0", fontSize: 14, lineHeight: 1.7,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.2)", minHeight: 48,
+            color: "#111827", fontSize: 14, lineHeight: 1.7,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.06)", minHeight: 48,
           }}
         >
           {msg.answer || msg.content || ""}
@@ -175,7 +175,7 @@ export default function MessageBubble({ msg }) {
         </div>
 
         {msg.timestamp && (
-          <div style={{ fontSize: 11, color: "#64748b", display: "flex", gap: 12, marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "#9ca3af", display: "flex", gap: 12, marginTop: 4 }}>
             <span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
             {msg.iteration_count > 0 && <span>Iterations: {msg.iteration_count}</span>}
           </div>

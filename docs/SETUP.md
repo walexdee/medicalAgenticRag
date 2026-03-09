@@ -1,282 +1,271 @@
 # Medical Agentic RAG – Setup & Deployment Guide
 
-## Quick Setup (5 minutes)
+## Prerequisites
 
-### Step 1: Clone & Navigate
+| Tool | Version | Notes |
+|------|---------|-------|
+| Python | 3.10+ | `python3 --version` |
+| Node.js | 18+ | `node --version` |
+| PostgreSQL | 17 | with pgvector extension |
+| Docker | 24+ | required for AWS deployment |
+| Terraform | 1.6+ | required for AWS deployment |
+| AWS CLI | 2.x | required for AWS deployment |
+
+## Local Development
+
+### 1. Install PostgreSQL 17
+
+**macOS:**
 ```bash
-git clone <your-repo-url>
-cd Medical_RAG
+brew install postgresql@17
+brew services start postgresql@17
+echo 'export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-### Step 2: Install All Dependencies
+**Ubuntu/Debian:**
 ```bash
+sudo apt install -y postgresql-17 postgresql-17-pgvector
+sudo systemctl start postgresql
+```
+
+### 2. Create the Database and Enable pgvector
+
+```bash
+createdb medical_rag
+psql medical_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+> The pgvector extension must be created before starting the backend. Tables (`medical_qna`, `medical_device`, `conversation_turns`) are created automatically on first startup.
+
+### 3. Clone and Install Dependencies
+
+```bash
+git clone https://github.com/yourusername/medicalAgenticRag.git
+cd medicalAgenticRag
 npm install
 ```
 
-This single command installs all Node packages **and** automatically creates a Python virtual environment (`.venv`) and installs all Python packages via the `postinstall` script in `package.json`.
+`npm install` triggers the `postinstall` script which:
+1. Creates a Python virtual environment at `.venv`
+2. Installs all Python packages from `requirements.txt`
+
+### 4. Configure Environment
 
 ```bash
-# Configure environment
 cp .env.example .env
-# Edit .env with your keys:
-#   OPENAI_API_KEY=sk-...
-#   DATABASE_URL=postgresql://postgres:password@localhost/medical_rag
 ```
 
-Create the PostgreSQL database (first time only):
-```bash
-psql -U postgres -c "CREATE DATABASE medical_rag;"
-# Tables and pgvector extension are created automatically on first backend start
+Edit `.env`:
+```
+OPENAI_API_KEY=sk-...
+DATABASE_URL=postgresql://<your-system-username>@localhost/medical_rag
+API_HOST=0.0.0.0
+API_PORT=8000
 ```
 
-### Step 3: Start Backend
+On macOS, `<your-system-username>` is the output of `whoami`. A local PostgreSQL install does not require a password.
+
+### 5. Generate and Ingest Data
+
 ```bash
+# Generate synthetic datasets
 source .venv/bin/activate
+python data/generate_data.py
+
+# Start the backend
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# In a new terminal, trigger ingest
+curl -X POST http://localhost:8000/api/ingest
 ```
 
-Backend will be available at: **http://localhost:8000**
-- API Docs: http://localhost:8000/docs
-- Health Check: http://localhost:8000/api/health
+### 6. Start the Frontend
 
-### Step 4: Frontend Setup (New Terminal)
 ```bash
-# Start development server (dependencies already installed in Step 2)
 npm start
 ```
 
-Frontend will open at: **http://localhost:3000**
+Frontend opens at http://localhost:3000. The status indicator in the header turns green when the backend is reachable.
 
 ## Verify Setup
 
-### Test Backend
 ```bash
 # Health check
-curl http://localhost:8000/api/health | jq
+curl http://localhost:8000/api/health | python3 -m json.tool
 
-# Sample streaming query
+# Test a streaming query
 curl -X POST http://localhost:8000/api/query/stream \
   -H "Content-Type: application/json" \
-  -d '{"query": "What are symptoms of diabetes?", "conversation_id": "test-123"}'
-
-# Non-streaming query
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What are symptoms of diabetes?"}'
+  -d '{"query": "What are symptoms of diabetes?", "conversation_id": "test-1"}'
 ```
 
-### Test Frontend
-1. Open http://localhost:3000
-2. Click a sample question or type your own
-3. Watch the response stream token-by-token with source, confidence, and routing info
+## Production Deployment — AWS (Terraform)
 
-## Production Deployment
+### Architecture
 
-### Option 1: Docker (Recommended)
-
-```bash
-# Build and run with Docker Compose
-docker-compose up --build
-
-# Or build separately
-docker build -t medical-rag .
-docker run -p 8000:8000 --env-file .env medical-rag
+```
+Browser → CloudFront → S3 (React build)
+Browser → ALB → ECS Fargate (FastAPI backend)
+ECS Fargate → RDS PostgreSQL 16 (pgvector + history)
+ECS Fargate → Secrets Manager (OPENAI_API_KEY, DATABASE_URL)
 ```
 
-### Option 2: AWS (Terraform)
-
-All AWS infrastructure is defined in `terraform/`. It provisions ECS Fargate (backend), RDS PostgreSQL (vector store + history), S3 + CloudFront (frontend), ALB, ECR, and Secrets Manager.
+### Step 1: Provision Infrastructure
 
 ```bash
 cd terraform
 
-# Pass secrets via env vars — never hard-code them in .tf files
 export TF_VAR_openai_api_key="sk-..."
-export TF_VAR_db_password="your-db-password"
-export TF_VAR_app_api_key="your-secret-key"   # optional, leave empty to disable auth
+export TF_VAR_db_password="your-strong-db-password"
+export TF_VAR_app_api_key=""   # leave empty to disable API key auth
 
-# Initialise, preview, then apply
 terraform init
 terraform plan
-# terraform apply   # uncomment when ready to deploy
+terraform apply
 ```
 
-After `apply`, push your Docker image to ECR and sync the React build to S3:
+Note the outputs — you will need them in the steps below:
 ```bash
-# Build and push backend image
+terraform output
+# backend_url         = "http://<alb-dns>"
+# frontend_url        = "https://<cloudfront-id>.cloudfront.net"
+# ecr_repository_url  = "<account>.dkr.ecr.us-east-1.amazonaws.com/medical-rag"
+# s3_frontend_bucket  = "medical-rag-frontend-<suffix>"
+```
+
+### Step 2: Build and Push the Backend Image
+
+> If you are on an Apple Silicon Mac (M1/M2/M3), you must build for `linux/amd64` — ECS Fargate uses x86_64.
+
+```bash
 ECR_URL=$(terraform output -raw ecr_repository_url)
-aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URL
-docker build -t $ECR_URL:latest .
-docker push $ECR_URL:latest
 
-# Build and deploy frontend
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin $ECR_URL
+
+docker build --platform linux/amd64 -t "${ECR_URL}:latest" .
+docker push "${ECR_URL}:latest"
+```
+
+After pushing, force a new ECS deployment:
+```bash
+CLUSTER=$(terraform output -raw ecs_cluster_name)
+SERVICE=$(terraform output -raw ecs_service_name)
+aws ecs update-service --cluster $CLUSTER --service $SERVICE --force-new-deployment
+```
+
+### Step 3: Build and Deploy the Frontend
+
+Before building the React app, set the backend URL so it is baked into the bundle:
+
+```bash
+cd ..   # back to project root
+echo "REACT_APP_API_URL=$(cd terraform && terraform output -raw backend_url)" > .env.production
 npm run build
-S3_BUCKET=$(terraform output -raw s3_frontend_bucket)
+```
+
+Sync to S3 and invalidate the CloudFront cache:
+```bash
+S3_BUCKET=$(cd terraform && terraform output -raw s3_frontend_bucket)
 aws s3 sync build/ s3://$S3_BUCKET --delete
+
+DIST_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?Comment=='medical-rag frontend'].Id | [0]" \
+  --output text)
+aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
 ```
 
-**Google Cloud (Cloud Run):**
+### Step 4: Ingest Data
+
+Once the ECS task is healthy (check the ALB target group), trigger ingest:
 ```bash
-gcloud run deploy medical-rag \
-  --source . \
-  --platform managed \
-  --region us-central1 \
-  --set-env-vars OPENAI_API_KEY=${OPENAI_API_KEY}
+BACKEND=$(cd terraform && terraform output -raw backend_url)
+curl -X POST ${BACKEND}/api/ingest
 ```
 
-### Option 3: Manual VPS Deployment
+### Step 5: Verify
 
 ```bash
-# SSH into server
-ssh user@your-server.com
-
-# Install Python 3.11
-sudo apt update && sudo apt install python3.11 python3.11-venv
-
-# Clone repo
-git clone https://github.com/yourusername/medical-rag.git
-cd medical-rag
-
-# Install all dependencies (Python + Node) and configure env
-npm install
-cp .env.example .env
-# Edit .env with your keys
-
-# Install & configure Nginx
-sudo apt install nginx
-# Configure reverse proxy to localhost:8000
-
-# Run with systemd
-sudo nano /etc/systemd/system/medical-rag.service
-# [Service]
-# ExecStart=/root/medical-rag/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
-# WorkingDirectory=/root/medical-rag
-# Restart=always
-# Environment="PYTHONUNBUFFERED=1"
-
-sudo systemctl start medical-rag
-sudo systemctl enable medical-rag
+BACKEND=$(cd terraform && terraform output -raw backend_url)
+curl ${BACKEND}/api/health | python3 -m json.tool
 ```
+
+The frontend is accessible at the `frontend_url` Terraform output.
+
+## Updating a Deployed Stack
+
+**Backend code change:**
+```bash
+ECR_URL=$(cd terraform && terraform output -raw ecr_repository_url)
+docker build --platform linux/amd64 -t "${ECR_URL}:latest" .
+docker push "${ECR_URL}:latest"
+aws ecs update-service \
+  --cluster $(cd terraform && terraform output -raw ecs_cluster_name) \
+  --service $(cd terraform && terraform output -raw ecs_service_name) \
+  --force-new-deployment
+```
+
+**Frontend change:**
+```bash
+npm run build
+aws s3 sync build/ s3://$(cd terraform && terraform output -raw s3_frontend_bucket) --delete
+DIST_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?Comment=='medical-rag frontend'].Id | [0]" --output text)
+aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
+```
+
+## Configuration Reference
+
+All constants are in `backend/config.py`. Override any with environment variables:
+
+```python
+LLM_MODEL       = "gpt-4o-mini"
+EMBED_MODEL     = "text-embedding-3-small"
+DATABASE_URL    = "postgresql://localhost/medical_rag"  # override via .env
+N_RESULTS       = 5          # documents retrieved per query
+MAX_ITERATIONS  = 3          # max relevance-check loop iterations
+MAX_HISTORY_TURNS = 10       # conversation turns kept per session
+ALLOWED_ORIGINS = "http://localhost:3000"  # comma-separated CORS origins
+API_KEY         = ""         # enables X-API-Key auth when non-empty
+```
+
+Frontend API URL (`src/agentic_rag_app.jsx`):
+```javascript
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+```
+
+Set `REACT_APP_API_URL` in `.env.production` before running `npm run build` for any non-local deployment.
 
 ## Security Checklist
 
-- [x] Store secrets in `.env` (never commit)
-- [x] Use environment variables for API keys
-- [ ] Enable HTTPS/TLS for production
-- [x] API key authentication via `X-API-Key` header (`API_KEY` env var)
-- [x] Rate limiting — 20 req/min per IP via `slowapi`
-- [x] CORS restricted to allowed origins (`ALLOWED_ORIGINS` env var)
-- [x] Input validation — `sample_size` range-checked, CSV path removed from user input
-- [x] PostgreSQL + pgvector for vector store and conversation history
-- [ ] Monitor logs and errors
-- [ ] Enable RDS automated backups (set `backup_retention_period` > 0 in `terraform/rds.tf`)
-- [ ] Regular security updates
-
-## Scaling Considerations
-
-### Database
-- **Current**: PostgreSQL + pgvector (`medical_qna`, `medical_device`, `conversation_turns` tables)
-- **Schema** is created automatically by `init_schema()` + `init_history_schema()` on startup
-- **AWS**: Managed via RDS PostgreSQL 16 (`terraform/rds.tf`), `db.t3.micro` by default — change `db_instance_class` in `terraform/variables.tf` for production
-
-### Caching
-Add Redis for query caching:
-```python
-import redis
-cache = redis.Redis(host='localhost', port=6379)
-```
-
-### Load Balancing
-```bash
-# Use Gunicorn + multiple workers
-gunicorn backend.main:app \
-  --workers 4 \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000
-```
+- Store all secrets in `.env` — never commit this file
+- `OPENAI_API_KEY` and `DATABASE_URL` are stored in Secrets Manager on AWS
+- Enable `API_KEY` to require `X-API-Key` header on all query endpoints
+- Rate limiting: 20 requests/min per IP (via `slowapi`)
+- CORS: restrict `ALLOWED_ORIGINS` to your frontend domain in production
+- RDS: runs in private subnets, not publicly accessible
+- Enable HTTPS on the ALB by adding an ACM certificate to `terraform/alb.tf`
 
 ## Development Workflow
 
-### Add a New Feature
-
-1. Create feature branch:
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-
-2. Make changes in the relevant module:
-   ```bash
-   # Backend logic → backend/pipeline/nodes.py or backend/pipeline/graph.py
-   # API endpoints → backend/routes/
-   # Config → backend/config.py
-   # Frontend → src/App.jsx or src/components/
-   ```
-
-3. Test locally:
-   ```bash
-   # Restart backend
-   uvicorn backend.main:app --host 0.0.0.0 --port 8000
-
-   # Test frontend
-   npm start
-   ```
-
-4. Commit and push:
-   ```bash
-   git add .
-   git commit -m "feat: add your feature"
-   git push origin feature/your-feature
-   ```
-
-5. Create pull request (PR)
-
-### Testing
-
 ```bash
-# Backend tests
-pytest tests/
+# Create a feature branch
+git checkout -b feature/your-feature
 
-# Frontend tests
-npm test
+# Backend changes → backend/pipeline/nodes.py, backend/pipeline/graph.py, backend/routes/
+# Frontend changes → src/agentic_rag_app.jsx, src/components/
 
-# End-to-end tests
-pytest tests/e2e/
+# Test locally
+source .venv/bin/activate
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+npm start
+
+# Commit
+git add backend/ src/
+git commit -m "feat: your feature description"
+git push origin feature/your-feature
 ```
-
-## Troubleshooting
-
-| Problem | Debug Steps | Solution |
-|---------|-----------|----------|
-| Backend won't start | Check Python version, pip list | `npm install` (re-runs postinstall), check Python 3.10+ |
-| API key errors | Check `.env` exists & has keys | `cp .env.example .env` then add your keys |
-| PostgreSQL connection error | Check `DATABASE_URL` in `.env` | Verify DB running: `pg_isready`; check credentials |
-| pgvector extension missing | Connect to DB | Run `CREATE EXTENSION vector;` as superuser |
-| Frontend can't connect | Check `http://localhost:8000/api/health` | Verify backend runs, check network tab |
-| CORS errors | Check FastAPI CORS middleware | Ensure CORS is enabled for your domain |
-| Port already in use | Find process holding port | `lsof -ti :8000 \| xargs kill -9` then restart |
-
-## Configuration
-
-All constants are in `backend/config.py`:
-
-```python
-LLM_MODEL = "gpt-4o-mini"
-EMBED_MODEL = "text-embedding-3-small"
-DATABASE_URL = "postgresql://localhost/medical_rag"   # override via .env
-N_RESULTS = 5               # Docs retrieved per query
-MAX_ITERATIONS = 3          # Max relevance-check loops
-MAX_HISTORY_TURNS = 10      # Conversation turns kept per session
-
-# Set in .env to override:
-ALLOWED_ORIGINS = "http://localhost:3000"  # Comma-separated CORS origins
-API_KEY = ""                               # Enables X-API-Key auth when non-empty
-```
-
-## Support
-
-- **Docs**: http://localhost:8000/docs
-- **Logs**: JSON structured logs in terminal from `uvicorn backend.main:app --host 0.0.0.0 --port 8000`
-- **Issues**: Check application logs and API response
 
 ## Additional Resources
 
@@ -284,8 +273,3 @@ API_KEY = ""                               # Enables X-API-Key auth when non-emp
 - [LangGraph Documentation](https://langgraph.com/)
 - [pgvector Documentation](https://github.com/pgvector/pgvector)
 - [OpenAI API Documentation](https://platform.openai.com/docs/)
-- [React Documentation](https://react.dev/)
-
----
-
-**Your Medical Agentic RAG is ready for production!**

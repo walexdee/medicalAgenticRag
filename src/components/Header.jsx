@@ -6,12 +6,12 @@ export default function Header({ apiStatus }) {
   return (
     <div
       style={{
-        borderBottom: "1px solid #1e293b",
+        borderBottom: "1px solid #e5e7eb",
         padding: "14px 24px",
         display: "flex",
         alignItems: "center",
         gap: 12,
-        background: "rgba(15,23,42,0.95)",
+        background: "rgba(255,255,255,0.95)",
         backdropFilter: "blur(12px)",
         position: "sticky",
         top: 0,
@@ -38,13 +38,13 @@ export default function Header({ apiStatus }) {
             fontFamily: "'Space Grotesk',sans-serif",
             fontWeight: 700,
             fontSize: 16,
-            color: "#f8fafc",
+            color: "#111827",
             letterSpacing: -0.5,
           }}
         >
           Medical Agentic RAG
         </div>
-        <div style={{ fontSize: 11, color: "#475569", letterSpacing: 0.5 }}>
+        <div style={{ fontSize: 11, color: "#9ca3af", letterSpacing: 0.5 }}>
           ROUTER · RETRIEVER · RELEVANCE CHECK · GENERATE
         </div>
       </div>

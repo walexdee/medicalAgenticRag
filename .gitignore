@@ -34,7 +34,6 @@ ENV/
 env/
 .venv
 
-# ChromaDB
 chroma_db/
 *.db
 
